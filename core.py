@@ -1,15 +1,16 @@
 import math
+from graphviz import Digraph
 class Value:
-    def __init__(self, value=0, _children=(), op=""):
+    def __init__(self, value=0, _children=(), _op=""):
         self.value = value
         self.grad=0
         self._backward = lambda: None
         self.children = set(_children)
-        self.op = op
+        self._op = _op
     
     def __add__(self, other):
         other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.value+other.value,(self,other),op="+")
+        out = Value(self.value+other.value,(self,other),_op="+")
     
         def _backward():
             self.grad += out.grad
@@ -23,7 +24,7 @@ class Value:
 
     def __mul__(self,other):
         other = other if isinstance(other, Value) else Value(other)
-        out = Value(self.value*other.value,(self,other),op="*")
+        out = Value(self.value*other.value,(self,other),_op="*")
 
         def _backward():
             self.grad+=out.grad*other.value
@@ -34,17 +35,16 @@ class Value:
 
     def __pow__(self,other):
         other = other if isinstance(other,Value) else Value(other)
-        out = Value(self.value**other.value,(self,other), op="^")
+        out = Value(self.value**other.value,(self,other), _op="^")
 
         def _backward():
             self.grad += out.grad * other.value * ((self.value)**(other.value - 1))
-            other.grad += out.grad * math.log(self.value) * out.value
         
         out._backward = _backward
         return out
     
     def relu(self):
-        out = Value(0 if self.value<0 else self.value, (self,), op="ReLU")
+        out = Value(0 if self.value<0 else self.value, (self,), _op="ReLU")
 
         def _backward():
             self.grad += (0 if self.value<0 else 1)*out.grad
@@ -91,4 +91,27 @@ class Value:
         return f"Value(data={self.value}, grad={self.grad})"
 
 
-        
+def trace(root):
+    nodes, edges = set(), set()
+    def build(v):
+        if v not in nodes:
+            nodes.add(v)
+            for child in v.children:
+                edges.add((child,v))
+                build(child)
+    build(root)
+    return nodes, edges
+
+def draw_dot(root):
+    dot = Digraph(format='svg',graph_attr={'rankdir':'LR'})
+    nodes,edges = trace(root)
+    for n in nodes:
+        dot.node(name=str(id(n)), label = "{ data %.4f | grad %.4f }" % (n.data, n.grad), shape='record')
+        if n._op:
+            dot.node(name=str(id(n)) + n._op, label=n._op)
+            dot.edge(str(id(n)) + n._op, str(id(n)))
+    
+    for n1, n2 in edges:
+        dot.edge(str(id(n1)), str(id(n2)) + n2._op)
+    
+    return dot
